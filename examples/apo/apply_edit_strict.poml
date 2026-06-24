@@ -1,0 +1,40 @@
+<poml>
+    <p>Revise the given prompt template using the critique
+   as constraints and improvement guide.</p>
+    <cp caption="Revision Rules">
+      <list listStyle="decimal">
+        <item>Rewrite or restructure the prompt if the
+  critique implies it.</item>
+        <item>Prioritize mechanism-first phrasing: define
+  what to do, then how to do it.</item>
+        <item><b>The ONLY allowed placeholders are exactly
+   these six, written with single curly brackets: {date},
+  {time}, {duration_min}, {attendees}, {needs},
+  {accessible_required}. You MUST NOT invent, rename, add,
+   or remove any placeholder. Never introduce names like
+  {needs_mode}, {timezone}, {max_results}, etc.</b></item>
+        <item><b>You MUST NOT write any other literal
+  curly bracket. If you need to show a JSON example or
+  output schema, describe it in plain words (e.g. "return
+        a JSON object with a best_choice field"). Do NOT write
+        literal double opening or closing curly braces.</b></item>
+        <item><b>The result MUST be renderable by Python
+  str.format with exactly those six keys. Mentally verify
+  this before answering.</b></item>
+      </list>
+    </cp>
+    <output-format>
+      Return only the improved prompt template, with the
+  six placeholders intact and no other curly brackets. No
+  explanations, headers, or introductory text.
+    </output-format>
+    <human-msg>
+      <cp caption="Prompt Template">
+        <text whiteSpace="pre">{{ prompt_template
+  }}</text>
+      </cp>
+      <cp caption="Critique">
+        <text whiteSpace="pre">{{ critique }}</text>
+      </cp>
+    </human-msg>
+  </poml>
