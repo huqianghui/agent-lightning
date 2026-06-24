@@ -5,7 +5,7 @@ import json
 import traceback
 from typing import List, Optional, Tuple, TypedDict, cast
 
-from openai import OpenAI
+from openai import AzureOpenAI
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageFunctionToolCallParam,
@@ -91,7 +91,7 @@ def prompt_template_baseline() -> PromptTemplate:
     )
 
 
-def room_selection_grader(client: OpenAI, final_message: Optional[str], expected_choice: str) -> float:
+def room_selection_grader(client: AzureOpenAI, final_message: Optional[str], expected_choice: str) -> float:
     judge_prompt = (
         f"You are a strict grader of exact room choice."
         f"Task output:\n{final_message}\n\n"
@@ -149,7 +149,7 @@ def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> f
     It also should work with a very small model like gpt-4.1-nano.
     """
 
-    client = OpenAI()
+    client = AzureOpenAI()
     model = "gpt-4.1-nano"
 
     user_message = prompt_template.format(**task["task_input"])

@@ -5,7 +5,7 @@
 import logging
 from typing import Tuple, cast
 
-from openai import AsyncOpenAI
+from openai import AsyncAzureOpenAI
 from room_selector import RoomSelectionTask, load_room_tasks, prompt_template_baseline, room_selector
 
 from agentlightning import Trainer, setup_logging
@@ -36,10 +36,12 @@ def main() -> None:
     setup_logging()
     setup_apo_logger()
 
-    openai_client = AsyncOpenAI()
+    openai_client = AsyncAzureOpenAI()
 
     algo = APO[RoomSelectionTask](
         openai_client,
+        gradient_model="gpt-5-mini",
+        apply_edit_model="gpt-4.1-mini",
         val_batch_size=10,
         gradient_batch_size=4,
         beam_width=2,
