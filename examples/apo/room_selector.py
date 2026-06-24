@@ -152,7 +152,16 @@ def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> f
     client = AzureOpenAI()
     model = "gpt-4.1-nano"
 
-    user_message = prompt_template.format(**task["task_input"])
+    try:
+        user_message = prompt_template.format(**task["task_input"])
+    except (KeyError, ValueError, IndexError) as e:
+      console.print(f"[bold red]=== Error formatting prompt ===[/bold red]")
+      console.print(e)
+      return 0.0   # 坏模板直接 0 分，被 beam search 淘汰，而不是崩成 None
+    except Exception as e:
+        console.print(f"[bold red]=== Error formatting prompt ===[/bold red]")
+        console.print(e)
+        raise
 
     messages: List[ChatCompletionMessageParam] = [
         {"role": "system", "content": "You are a scheduling assistant."},

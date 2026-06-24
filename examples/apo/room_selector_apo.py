@@ -12,6 +12,7 @@ from agentlightning import Trainer, setup_logging
 from agentlightning.adapter import TraceToMessages
 from agentlightning.algorithm.apo import APO
 from agentlightning.types import Dataset
+from pathlib import Path
 
 
 def load_train_val_dataset() -> Tuple[Dataset[RoomSelectionTask], Dataset[RoomSelectionTask]]:
@@ -42,11 +43,12 @@ def main() -> None:
         openai_client,
         gradient_model="gpt-5-mini",
         apply_edit_model="gpt-4.1-mini",
-        val_batch_size=10,
+        val_batch_size=29,
         gradient_batch_size=4,
         beam_width=2,
         branch_factor=2,
         beam_rounds=2,
+        apply_edit_prompt_files=[Path("/home/azureuser/agent-lightning/examples/apo/apply_edit_strict.poml")],
         _poml_trace=True,
     )
     trainer = Trainer(
@@ -65,6 +67,12 @@ def main() -> None:
     )
     dataset_train, dataset_val = load_train_val_dataset()
     trainer.fit(agent=room_selector, train_dataset=dataset_train, val_dataset=dataset_val)
+    
+    # Get the best prompt found by the APO algorithm
+    best = algo.get_best_prompt()
+    print(best.template)
+    print("best score:", algo._history_best_score)
+    
 
 
 if __name__ == "__main__":
