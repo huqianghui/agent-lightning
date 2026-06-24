@@ -49,6 +49,7 @@ def main() -> None:
         branch_factor=2,
         beam_rounds=2,
         apply_edit_prompt_files=[Path("/home/azureuser/agent-lightning/examples/apo/apply_edit_strict.poml")],
+        gradient_prompt_files=[Path("/home/azureuser/agent-lightning/examples/apo/text_gradient_strict.poml")],
         _poml_trace=True,
     )
     trainer = Trainer(

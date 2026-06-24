@@ -1,0 +1,69 @@
+<poml>
+  <p>You optimize a prompt template.</p>
+  <cp caption="Original Prompt Template">
+    <text whiteSpace="pre">{{ prompt_template }}</text>
+  </cp>
+  
+  <cp caption="Experiments with Original Prompt Template">
+    <cp for="experiment in experiments" caption="Experiment {{ loop.index + 1 }}">
+      <p>This experiment has {{ experiment.status }}. It gets a final reward: {{ experiment.final_reward }}</p>
+      <cp caption="Rollout Traces (Chat Messages, Grader Requests included)">
+        <object data="{{ experiment.messages }}" />
+      </cp>
+    </cp>
+  </cp>
+  <cp caption="Your Task">
+    Produce a brief critique listing specific causes for the error or ways to raise reward next time.
+    Return a bullet list with concrete, testable changes (format, constraints, ordering, definitions).
+  </cp>
+
+   <cp caption="Optimization Objective (what the grader
+  actually rewards)">
+    <list listStyle="decimal">
+      <item>The agent is graded ONLY on exactly matching
+  one expected
+        room id. There is no credit for extra fields, JSON
+   schema,
+        ranking, alternatives, or internal checks.</item>
+      <item>Brevity helps: verbose JSON / multi-room
+  output makes it
+        HARDER for the judge to match the single expected
+  choice, and
+        lowers the score. Prefer critiques that improve
+  single-choice
+        accuracy, NOT critiques that add output
+  structure.</item>
+      <item>Do NOT suggest adding output schemas, top-3
+  lists,
+        confirmation prompts, debug fields, or embedded
+  unit tests.</item>
+    </list>
+  </cp>
+
+  <cp caption="Critique Output Constraints (the critique
+  is copied into a str.format template)">
+    <list listStyle="decimal">
+      <item>The downstream prompt is rendered by Python
+  str.format and
+        may use ONLY these six placeholders: {date},
+  {time},
+        {duration_min}, {attendees}, {needs},
+  {accessible_required}.</item>
+      <item>NEVER write a regular expression containing
+  brace
+        quantifiers like \d{4} or {2}. Describe formats in
+   plain words
+        (e.g. "date in YYYY-MM-DD form"), never with
+  regex.</item>
+      <item>NEVER include a literal JSON example or any
+  other text
+        containing { or } characters. Describe data shapes
+   in words.</item>
+      <item>NEVER propose new placeholder variables (e.g.
+  {distance_m},
+        {timezone}, {max_results}). They will crash
+  rendering.</item>
+    </list>
+  </cp>
+
+</poml>
