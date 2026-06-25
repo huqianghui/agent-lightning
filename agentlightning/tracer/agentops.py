@@ -16,6 +16,7 @@ from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
 from opentelemetry.trace.status import StatusCode
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
+from agentlightning.instrumentation.agentops import enable_agentops_service
 from agentlightning.store.base import LightningStore
 from agentlightning.utils.otel import get_span_processors, get_tracer_provider
 
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+ENABLE_AGENTOPS_SERVICE_ENV = "AGENTLIGHTNING_ENABLE_AGENTOPS_SERVICE"
 
 
 class AgentOpsTracer(OtelTracer):
@@ -69,6 +72,10 @@ class AgentOpsTracer(OtelTracer):
 
     def _initialize_tracer_provider(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Setting up AgentOps tracer...")  # worker_id included in process name
+
+        enable_agentops_service_env = os.getenv(ENABLE_AGENTOPS_SERVICE_ENV)
+        if enable_agentops_service_env is not None:
+            enable_agentops_service(enable_agentops_service_env.lower() in {"1", "true", "yes", "on"})
 
         if self.instrument_managed:
             self.instrument(worker_id)
