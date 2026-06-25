@@ -3,6 +3,8 @@
 """This sample code demonstrates how to use an existing APO algorithm to tune the prompts."""
 
 import logging
+import os
+from pathlib import Path
 from typing import Tuple, cast
 
 from openai import AsyncAzureOpenAI
@@ -11,8 +13,9 @@ from room_selector import RoomSelectionTask, load_room_tasks, prompt_template_ba
 from agentlightning import Trainer, setup_logging
 from agentlightning.adapter import TraceToMessages
 from agentlightning.algorithm.apo import APO
+from agentlightning.instrumentation.agentops import enable_agentops_service
+from agentlightning.tracer.agentops import ENABLE_AGENTOPS_SERVICE_ENV
 from agentlightning.types import Dataset
-from pathlib import Path
 
 
 def load_train_val_dataset() -> Tuple[Dataset[RoomSelectionTask], Dataset[RoomSelectionTask]]:
@@ -36,6 +39,8 @@ def setup_apo_logger(file_path: str = "apo.log") -> None:
 def main() -> None:
     setup_logging()
     setup_apo_logger()
+    os.environ[ENABLE_AGENTOPS_SERVICE_ENV] = "true"
+    enable_agentops_service(True)
 
     openai_client = AsyncAzureOpenAI()
 

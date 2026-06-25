@@ -31,7 +31,7 @@ import argparse
 import asyncio
 from typing import Optional, Sequence
 
-from openai import AsyncOpenAI
+from openai import AsyncAzureOpenAI
 from rich.console import Console
 
 import agentlightning as agl
@@ -102,7 +102,7 @@ async def apo_algorithm(*, store: agl.LightningStore):
 @agl.rollout
 async def apo_rollout(task: str, prompt_template: agl.PromptTemplate) -> float:
     # This relies on a public OpenAI service
-    client = AsyncOpenAI()
+    client = AsyncAzureOpenAI()
 
     result = await client.chat.completions.create(
         model="gpt-4.1-nano",
@@ -125,7 +125,7 @@ async def log_llm_span(spans: Sequence[agl.Span]) -> None:
 
 
 async def llm_judge(task: str, output: Optional[str]) -> float:
-    client = AsyncOpenAI()
+    client = AsyncAzureOpenAI()
     judge_prompt = f"""Evaluate how well the output fulfills the task.
 Task: {task}
 Output: {output}
