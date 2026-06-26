@@ -287,15 +287,18 @@ async def sft_one_iter(
                     f"[bold red][Algo][/bold red] Skip triplet because it has no prompt or response: {triplet}"
                 )
 
-    # IMPORTANT: Shuffle the triplets and rank them by reward
+    # IMPORTANT: Keep only positively rewarded triplets, then rank them by reward
     if len(all_triplets) == 0:
         raise ValueError("No triplets to train on.")
-    random.shuffle(all_triplets)
-    all_triplets.sort(key=lambda x: x["reward"], reverse=True)
-    sliced_triplets = all_triplets[: max(1, int(len(all_triplets) * triplet_fraction))]
+    positive_triplets = [triplet for triplet in all_triplets if triplet["reward"] > 0]
+    if len(positive_triplets) == 0:
+        raise ValueError("No positively rewarded triplets to train on.")
+    random.shuffle(positive_triplets)
+    positive_triplets.sort(key=lambda x: x["reward"], reverse=True)
+    sliced_triplets = positive_triplets[: max(1, int(len(positive_triplets) * triplet_fraction))]
     console.print(
         f"[bold red][Algo][/bold red] Generated {len(all_triplets)} triplets for SFT training. "
-        f"Keeping {len(sliced_triplets)} with top rewards."
+        f"Keeping {len(sliced_triplets)} out of {len(positive_triplets)} positively rewarded triplets."
     )
     # Shuffle the sliced triplets again
     random.shuffle(sliced_triplets)
