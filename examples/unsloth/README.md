@@ -47,6 +47,8 @@ The all-in-one script handles the complete SFT workflow including store manageme
 python sft_allinone.py
 ```
 
+The script writes the filtered training records used by SFT to `sft_data_iter<N>_tokens.json` and the matching readable records to `sft_data_iter<N>_text.json` before each fine-tuning step. To keep a full console log as well, run `python sft_allinone.py 2>&1 | tee run.log`.
+
 See [How to Fine-tune with Unsloth](../../docs/how-to/unsloth-sft.md) for more details.
 
 ### Training in Separate Processes
@@ -75,3 +77,4 @@ python math_agent.py
 ```
 
 This runs a dry run with a few problems to verify the agent setup. Set `OPENAI_API_KEY` and `OPENAI_BASE_URL` environment variables to configure the API endpoint.
+For Azure OpenAI, set `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `OPENAI_API_VERSION`, and `AZURE_OPENAI_DEPLOYMENT` instead. The deployment name is passed as the `LLM.model` value.

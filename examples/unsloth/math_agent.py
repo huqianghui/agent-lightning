@@ -5,8 +5,10 @@
 To run it, first configure the environment variables:
 
 ```bash
-export OPENAI_API_KEY=your_api_key
-export OPENAI_BASE_URL=your_base_url
+export AZURE_OPENAI_API_KEY=your_api_key
+export AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+export OPENAI_API_VERSION=2025-04-01-preview
+export AZURE_OPENAI_DEPLOYMENT=your_deployment_name
 ```
 
 Then, run the agent:
@@ -25,7 +27,7 @@ import numpy as np
 from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, Runner
 from agents.mcp import MCPServerStdio
 from datasets import load_dataset  # type: ignore
-from openai import AsyncAzureOpenAI
+from openai import AsyncAzureOpenAI, AsyncOpenAI
 from rich.console import Console
 from trl import SFTConfig, SFTTrainer  # type: ignore
 
@@ -34,6 +36,29 @@ from agentlightning.litagent import rollout
 from agentlightning.types import LLM, Dataset
 
 console = Console()
+
+
+def _get_required_env(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    raise RuntimeError(f"Set one of these environment variables: {', '.join(names)}")
+
+
+def _create_openai_client(llm: LLM) -> AsyncAzureOpenAI | AsyncOpenAI:
+    api_key = llm.api_key or "dummy"
+    api_version = llm.sampling_parameters.get("api_version")
+    if api_version:
+        return AsyncAzureOpenAI(
+            azure_endpoint=llm.endpoint,
+            api_key=api_key,
+            api_version=str(api_version),
+        )
+    return AsyncOpenAI(
+        base_url=llm.endpoint,
+        api_key=api_key,
+    )
 
 
 class GsmProblem(TypedDict):
@@ -109,10 +134,7 @@ async def math_agent(task: GsmProblem, llm: LLM) -> float:
             mcp_servers=[server],
             model=OpenAIChatCompletionsModel(
                 model=llm.model,
-                openai_client=AsyncAzureOpenAI(
-                    base_url=llm.endpoint,
-                    api_key=llm.api_key or "dummy",
-                ),
+                openai_client=_create_openai_client(llm),
             ),
             model_settings=ModelSettings(
                 temperature=llm.sampling_parameters.get("temperature", 0.0),
@@ -159,13 +181,19 @@ def math_agent_dry_run() -> None:
     using a single worker. Useful for testing the setup and configuration.
     """
     dataset = load_math_dataset(limit=4)
+    is_azure_openai = bool(os.getenv("AZURE_OPENAI_ENDPOINT"))
+    sampling_parameters = {}
+    if is_azure_openai:
+        sampling_parameters["api_version"] = _get_required_env("AZURE_OPENAI_API_VERSION", "OPENAI_API_VERSION")
+
     trainer = Trainer(
         n_workers=1,
         initial_resources={
             "llm": LLM(
-                endpoint=os.environ["OPENAI_BASE_URL"],
-                api_key=os.environ["OPENAI_API_KEY"],
-                model="gpt-4.1-mini",
+                endpoint=_get_required_env("AZURE_OPENAI_ENDPOINT", "OPENAI_BASE_URL"),
+                api_key=_get_required_env("AZURE_OPENAI_API_KEY", "OPENAI_API_KEY"),
+                model=os.getenv("AZURE_OPENAI_DEPLOYMENT", os.getenv("OPENAI_MODEL", "gpt-4.1-mini")),
+                sampling_parameters=sampling_parameters,
             )
         },
     )

@@ -286,9 +286,10 @@ async def math_agent(task: GsmProblem, llm: agl.LLM) -> float:
     import asyncio
 
     llm = agl.LLM(
-        endpoint=os.environ["OPENAI_BASE_URL"],
-        api_key=os.environ["OPENAI_API_KEY"],
-        model="gpt-4.1-mini",
+        endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+        api_key=os.environ["AZURE_OPENAI_API_KEY"],
+        model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+        sampling_parameters={"api_version": os.environ["OPENAI_API_VERSION"]},
     )
     asyncio.run(math_agent({"input": "What is 1 + 1?", "target": 2.0}, llm))
     ```
