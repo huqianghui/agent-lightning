@@ -106,6 +106,7 @@ class UnslothSupervisedFinetuning(Algorithm):
                 data_adapter=data_adapter,
                 reward_threshold=self.reward_threshold,
                 vllm_port=self.vllm_port,
+                previous_reward_count_records=reward_count_records,
             )
             model_path = result.model_path
             should_stop = should_stop_by_reward_count(reward_count_records, result.reward_sample_count)
@@ -117,10 +118,6 @@ class UnslothSupervisedFinetuning(Algorithm):
                 )
             )
             if should_stop:
-                console.print(
-                    f"[bold red][Algo][/bold red] Latest reward sample count {result.reward_sample_count} is lower "
-                    "than at least two previous counts. Stopping."
-                )
                 break
             iteration += 1
 

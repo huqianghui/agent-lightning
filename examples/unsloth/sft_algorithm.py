@@ -228,6 +228,7 @@ async def sft_one_iter(
     reward_threshold: float,
     vllm_port: int,
     previous_data_fingerprint: Optional[str] = None,
+    previous_reward_count_records: Optional[List[SftRewardCountRecord]] = None,
 ) -> SftIterationResult:
     """One iteration of SFT.
 
@@ -246,6 +247,8 @@ async def sft_one_iter(
         vllm_port: The port to serve vLLM chat completion endpoint.
         previous_data_fingerprint: Fingerprint from the previous iteration. If the selected SFT data is unchanged,
             training is skipped and convergence is reported.
+        previous_reward_count_records: Reward sample counts from previous rollout models. If the current count is
+            lower than at least two previous counts, training is skipped.
 
     Returns:
         The iteration result, including the next model path and whether selected SFT data changed.
@@ -428,6 +431,20 @@ async def sft_one_iter(
             reward_sample_count=reward_sample_count,
         )
 
+    if previous_reward_count_records is not None and should_stop_by_reward_count(
+        previous_reward_count_records, reward_sample_count
+    ):
+        console.print(
+            f"[bold red][Algo][/bold red] Latest reward sample count {reward_sample_count} is lower "
+            "than at least two previous counts. Stopping before training."
+        )
+        return SftIterationResult(
+            model_path=model_path,
+            data_fingerprint=data_fingerprint,
+            data_changed=False,
+            reward_sample_count=reward_sample_count,
+        )
+
     sft_dataset = HuggingFaceDataset.from_list(selected_triplets)  # type: ignore
 
     console.print(f"[bold red][Algo][/bold red] SFT dataset has {len(sft_dataset)} samples")
@@ -510,6 +527,7 @@ async def sft_algorithm(*, store: LightningStore) -> None:
             data_adapter=data_adapter,
             reward_threshold=REWARD_THRESHOLD,
             vllm_port=VLLM_PORT,
+            previous_reward_count_records=reward_count_records,
         )
         model_path = result.model_path
         should_stop = should_stop_by_reward_count(reward_count_records, result.reward_sample_count)
@@ -521,10 +539,6 @@ async def sft_algorithm(*, store: LightningStore) -> None:
             )
         )
         if should_stop:
-            console.print(
-                f"[bold red][Algo][/bold red] Latest reward sample count {result.reward_sample_count} is lower "
-                "than at least two previous counts. Stopping."
-            )
             break
         iteration += 1
 
