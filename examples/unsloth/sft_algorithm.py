@@ -18,13 +18,14 @@ agl store --port 4747
 """
 
 import asyncio
+import json
 import multiprocessing
 import os
 import random
 import subprocess
 import time
 from contextlib import contextmanager
-from typing import List, Optional, TypedDict
+from typing import Any, List, Optional, Tuple, TypedDict
 
 import httpx
 from datasets import Dataset as HuggingFaceDataset  # type: ignore
@@ -55,6 +56,35 @@ class HuggingFaceDatasetRecord(TypedDict):
     attention_mask: List[int]
     labels: List[int]
     reward: float
+
+
+class SftTextDatasetRecord(TypedDict):
+    """Human-readable record corresponding to one SFT training sample."""
+
+    rollout_id: str
+    reward: float
+    prompt_text: str
+    response_text: str
+    prompt_raw_content: Any
+    response_raw_content: Any
+    prompt_token_count: int
+    response_token_count: int
+
+
+def _extract_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "\n".join(text for item in value if (text := _extract_text(item)))
+    if isinstance(value, dict):
+        for key in ("content", "text", "message", "delta"):
+            text = _extract_text(value.get(key))
+            if text:
+                return text
+        return "\n".join(text for item in value.values() if (text := _extract_text(item)))
+    return str(value)
 
 
 @contextmanager
@@ -226,7 +256,7 @@ async def sft_one_iter(
     # LLM server can be shutdown now as we perform the training
 
     # 2. Prepare the dataset for SFT
-    all_triplets: List[HuggingFaceDatasetRecord] = []
+    all_records: List[Tuple[HuggingFaceDatasetRecord, SftTextDatasetRecord]] = []
     for rollout in completed_rollouts:
         spans = await store.query_spans(rollout.rollout_id, "latest")
         # Use data_adapter to adapt the spans to triplets. Triplets are a list of Pydantic models:
@@ -272,15 +302,31 @@ async def sft_one_iter(
                 #     "attention_mask": [1, 1, 1, 1, 1, 1, 1],
                 #     "labels": [-100, -100, -100, 3838, 374, 279, 74024],
                 # }
-                input_ids = triplet.prompt["token_ids"] + triplet.response["token_ids"]
-                labels = [-100 for _ in range(len(triplet.prompt["token_ids"]))] + triplet.response["token_ids"]
-                all_triplets.append(
-                    {
-                        "input_ids": input_ids,
-                        "attention_mask": [1] * len(input_ids),
-                        "labels": labels,
-                        "reward": recent_reward,
-                    }
+                prompt_token_ids = triplet.prompt["token_ids"]
+                response_token_ids = triplet.response["token_ids"]
+                input_ids = prompt_token_ids + response_token_ids
+                labels = [-100 for _ in range(len(prompt_token_ids))] + response_token_ids
+                token_record: HuggingFaceDatasetRecord = {
+                    "input_ids": input_ids,
+                    "attention_mask": [1] * len(input_ids),
+                    "labels": labels,
+                    "reward": recent_reward,
+                }
+                text_record: SftTextDatasetRecord = {
+                    "rollout_id": rollout.rollout_id,
+                    "reward": recent_reward,
+                    "prompt_text": _extract_text(triplet.prompt.get("raw_content")),
+                    "response_text": _extract_text(triplet.response.get("raw_content")),
+                    "prompt_raw_content": triplet.prompt.get("raw_content"),
+                    "response_raw_content": triplet.response.get("raw_content"),
+                    "prompt_token_count": len(prompt_token_ids),
+                    "response_token_count": len(response_token_ids),
+                }
+                all_records.append(
+                    (
+                        token_record,
+                        text_record,
+                    )
                 )
             else:
                 console.print(
@@ -288,19 +334,30 @@ async def sft_one_iter(
                 )
 
     # IMPORTANT: Keep only rewarded triplets, then rank them by reward
-    if len(all_triplets) == 0:
+    if len(all_records) == 0:
         raise ValueError("No triplets to train on.")
-    selected_triplets = [triplet for triplet in all_triplets if triplet["reward"] > reward_threshold]
-    if len(selected_triplets) == 0:
+    selected_records = [record for record in all_records if record[0]["reward"] > reward_threshold]
+    if len(selected_records) == 0:
         raise ValueError(f"No triplets with reward greater than {reward_threshold} to train on.")
-    random.shuffle(selected_triplets)
-    selected_triplets.sort(key=lambda x: x["reward"], reverse=True)
+    random.shuffle(selected_records)
+    selected_records.sort(key=lambda x: x[0]["reward"], reverse=True)
     console.print(
-        f"[bold red][Algo][/bold red] Generated {len(all_triplets)} triplets for SFT training. "
-        f"Keeping {len(selected_triplets)} with reward greater than {reward_threshold}."
+        f"[bold red][Algo][/bold red] Generated {len(all_records)} triplets for SFT training. "
+        f"Keeping {len(selected_records)} with reward greater than {reward_threshold}."
     )
     # Shuffle the selected triplets again
-    random.shuffle(selected_triplets)
+    random.shuffle(selected_records)
+    selected_triplets = [record[0] for record in selected_records]
+    selected_text_triplets = [record[1] for record in selected_records]
+    sft_data_path = f"sft_data_iter{iteration}_tokens.json"
+    sft_text_data_path = f"sft_data_iter{iteration}_text.json"
+    with open(sft_data_path, "w") as f:
+        json.dump(selected_triplets, f)
+    with open(sft_text_data_path, "w") as f:
+        json.dump(selected_text_triplets, f, indent=2)
+    console.print(
+        f"[bold red][Algo][/bold red] Saved SFT training data to {sft_data_path} and {sft_text_data_path}"
+    )
 
     sft_dataset = HuggingFaceDataset.from_list(selected_triplets)  # type: ignore
 

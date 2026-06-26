@@ -7,6 +7,7 @@ spider-data.zip
 claude_code/logs/
 agentops.log
 unsloth/models/
+unsloth/sft_data_iter[0-9].json
 unsloth/unsloth_compiled_cache/
 unsloth/unsloth_training_checkpoints/
 apo/pomltrace/
