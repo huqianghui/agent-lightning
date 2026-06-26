@@ -31,22 +31,22 @@ class UnslothSupervisedFinetuning(Algorithm):
 
     This class implements a complete SFT training loop that:
     1. Runs rollouts with the current model
-    2. Collects and ranks training data by reward
-    3. Fine-tunes the model on top-performing examples
+    2. Collects and filters training data by reward
+    3. Fine-tunes the model on rewarded examples
     4. Iterates for multiple rounds of improvement
 
     Args:
         max_iterations: The maximum number of SFT iterations to perform.
         vllm_port: The port to use for the vLLM inference server.
-        train_triplet_fraction: The fraction of top-performing triplets to use for training (0.0 to 1.0).
+        reward_threshold: Only triplets with rewards greater than this threshold are used for training.
         initial_model_path: The path to the initial model to start training from.
     """
 
-    def __init__(self, *, max_iterations: int, vllm_port: int, train_triplet_fraction: float, initial_model_path: str):
+    def __init__(self, *, max_iterations: int, vllm_port: int, reward_threshold: float, initial_model_path: str):
         # LLM proxy and data adapter are created by the trainer and we can directly use them
         self.max_iterations = max_iterations
         self.vllm_port = vllm_port
-        self.train_triplet_fraction = train_triplet_fraction
+        self.reward_threshold = reward_threshold
         self.initial_model_path = initial_model_path
 
     async def run(
@@ -86,7 +86,7 @@ class UnslothSupervisedFinetuning(Algorithm):
                 train_dataset=train_dataset,
                 llm_proxy=llm_proxy,
                 data_adapter=data_adapter,
-                triplet_fraction=self.train_triplet_fraction,
+                reward_threshold=self.reward_threshold,
                 vllm_port=self.vllm_port,
             )
 
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     algo = UnslothSupervisedFinetuning(
         max_iterations=2,
         vllm_port=12316,
-        train_triplet_fraction=0.5,
+        reward_threshold=0.0,
         initial_model_path="models/version_0",
     )
     trainer = Trainer(

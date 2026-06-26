@@ -6,7 +6,7 @@ This example demonstrates Supervised Fine-Tuning (SFT) using the Unsloth library
 
 ## Overview
 
-The SFT workflow iteratively improves the model by collecting rollouts, ranking them by reward, and fine-tuning on the top-performing examples. Unsloth optimizes the training process with memory-efficient techniques including 4-bit quantization, LoRA (Low-Rank Adaptation), and gradient checkpointing.
+The SFT workflow iteratively improves the model by collecting rollouts, filtering out non-rewarded traces, and fine-tuning on rewarded examples. Unsloth optimizes the training process with memory-efficient techniques including 4-bit quantization, LoRA (Low-Rank Adaptation), and gradient checkpointing.
 
 ## Requirements
 

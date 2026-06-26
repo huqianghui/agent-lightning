@@ -140,12 +140,12 @@ async def sft_one_iter(
     train_dataset: Dataset[GsmProblem],
     llm_proxy: LLMProxy,
     data_adapter: TraceToTripletBase,
-    triplet_fraction: float,
+    reward_threshold: float,
     vllm_port: int,
 ) -> str:
     """One iteration of SFT.
 
-    The idea is to get all trace data from the rollouts, and then use the reward to select the top triplets to train on.
+    The idea is to get all trace data from the rollouts, and then use the reward to select triplets to train on.
 
     Performs (1) rollout - data collection, (2) data conversion, (3) SFT training, and (4) model saving.
 
@@ -156,7 +156,7 @@ async def sft_one_iter(
         train_dataset: The dataset to train on.
         llm_proxy: The LLM proxy instance. Used to shield between the inference endpoint and the rollout runners.
         data_adapter: The data adapter instance. This is used to convert the trace data recorded by LLM proxy.
-        triplet_fraction: The fraction of triplets to use for SFT.
+        reward_threshold: Only triplets with rewards greater than this threshold are used for SFT.
         vllm_port: The port to serve vLLM chat completion endpoint.
 
     Returns:
@@ -287,23 +287,22 @@ async def sft_one_iter(
                     f"[bold red][Algo][/bold red] Skip triplet because it has no prompt or response: {triplet}"
                 )
 
-    # IMPORTANT: Keep only positively rewarded triplets, then rank them by reward
+    # IMPORTANT: Keep only rewarded triplets, then rank them by reward
     if len(all_triplets) == 0:
         raise ValueError("No triplets to train on.")
-    positive_triplets = [triplet for triplet in all_triplets if triplet["reward"] > 0]
-    if len(positive_triplets) == 0:
-        raise ValueError("No positively rewarded triplets to train on.")
-    random.shuffle(positive_triplets)
-    positive_triplets.sort(key=lambda x: x["reward"], reverse=True)
-    sliced_triplets = positive_triplets[: max(1, int(len(positive_triplets) * triplet_fraction))]
+    selected_triplets = [triplet for triplet in all_triplets if triplet["reward"] > reward_threshold]
+    if len(selected_triplets) == 0:
+        raise ValueError(f"No triplets with reward greater than {reward_threshold} to train on.")
+    random.shuffle(selected_triplets)
+    selected_triplets.sort(key=lambda x: x["reward"], reverse=True)
     console.print(
         f"[bold red][Algo][/bold red] Generated {len(all_triplets)} triplets for SFT training. "
-        f"Keeping {len(sliced_triplets)} out of {len(positive_triplets)} positively rewarded triplets."
+        f"Keeping {len(selected_triplets)} with reward greater than {reward_threshold}."
     )
-    # Shuffle the sliced triplets again
-    random.shuffle(sliced_triplets)
+    # Shuffle the selected triplets again
+    random.shuffle(selected_triplets)
 
-    sft_dataset = HuggingFaceDataset.from_list(sliced_triplets)  # type: ignore
+    sft_dataset = HuggingFaceDataset.from_list(selected_triplets)  # type: ignore
 
     console.print(f"[bold red][Algo][/bold red] SFT dataset has {len(sft_dataset)} samples")
 
@@ -342,7 +341,7 @@ async def sft_algorithm(*, store: LightningStore) -> None:
     1. Serves the current model via vLLM
     2. Collects rollout data using the model
     3. Converts trace data to training triplets
-    4. Trains the model on top-performing examples
+    4. Trains the model on rewarded examples
     5. Saves the improved model for the next iteration
 
     Args:
@@ -354,7 +353,7 @@ async def sft_algorithm(*, store: LightningStore) -> None:
     MAX_ITERATIONS = 2
     VLLM_PORT = 12316
     LLM_PROXY_PORT = 12358
-    TRAIN_TRIPLET_FRACTION = 0.5
+    REWARD_THRESHOLD = 0.0
 
     # Download the model before starting the script:
     # hf download unsloth/Qwen3-4B-Instruct-2507 --local-dir models/version_0
@@ -375,7 +374,7 @@ async def sft_algorithm(*, store: LightningStore) -> None:
             train_dataset=train_dataset,
             llm_proxy=llm_proxy,
             data_adapter=data_adapter,
-            triplet_fraction=TRAIN_TRIPLET_FRACTION,
+            reward_threshold=REWARD_THRESHOLD,
             vllm_port=VLLM_PORT,
         )
 
