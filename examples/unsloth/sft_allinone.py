@@ -36,13 +36,20 @@ class UnslothSupervisedFinetuning(Algorithm):
     4. Iterates for multiple rounds of improvement
 
     Args:
-        max_iterations: The maximum number of SFT iterations to perform.
+        max_iterations: Optional safety limit for SFT iterations. If None, run until SFT data stops changing.
         vllm_port: The port to use for the vLLM inference server.
         reward_threshold: Only triplets with rewards greater than this threshold are used for training.
         initial_model_path: The path to the initial model to start training from.
     """
 
-    def __init__(self, *, max_iterations: int, vllm_port: int, reward_threshold: float, initial_model_path: str):
+    def __init__(
+        self,
+        *,
+        max_iterations: Optional[int],
+        vllm_port: int,
+        reward_threshold: float,
+        initial_model_path: str,
+    ):
         # LLM proxy and data adapter are created by the trainer and we can directly use them
         self.max_iterations = max_iterations
         self.vllm_port = vllm_port
@@ -75,11 +82,16 @@ class UnslothSupervisedFinetuning(Algorithm):
         if llm_proxy is None:
             raise ValueError("LLM proxy must be provided.")
 
-        console.print(f"[bold red][Algo][/bold red] Starting SFT with {self.max_iterations} iterations.")
+        if self.max_iterations is None:
+            console.print("[bold red][Algo][/bold red] Starting SFT until SFT data stops changing.")
+        else:
+            console.print(f"[bold red][Algo][/bold red] Starting SFT with up to {self.max_iterations} iterations.")
         console.print(f"[bold red][Algo][/bold red] Initial model path: {self.initial_model_path}")
         model_path = self.initial_model_path
-        for iteration in range(self.max_iterations):
-            model_path = await sft_one_iter(
+        iteration = 0
+        previous_data_fingerprint: Optional[str] = None
+        while self.max_iterations is None or iteration < self.max_iterations:
+            result = await sft_one_iter(
                 iteration=iteration,
                 store=store,
                 model_path=model_path,
@@ -88,7 +100,13 @@ class UnslothSupervisedFinetuning(Algorithm):
                 data_adapter=data_adapter,
                 reward_threshold=self.reward_threshold,
                 vllm_port=self.vllm_port,
+                previous_data_fingerprint=previous_data_fingerprint,
             )
+            model_path = result.model_path
+            if not result.data_changed:
+                break
+            previous_data_fingerprint = result.data_fingerprint
+            iteration += 1
 
         console.print(f"[bold red][Algo][/bold red] Final model path: {model_path}")
 
@@ -97,7 +115,7 @@ if __name__ == "__main__":
     setup_logging()
 
     algo = UnslothSupervisedFinetuning(
-        max_iterations=2,
+        max_iterations=None,
         vllm_port=12316,
         reward_threshold=0.0,
         initial_model_path="models/version_0",

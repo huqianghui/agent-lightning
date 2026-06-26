@@ -64,8 +64,8 @@ def unsloth_training(model_path: str, sft_dataset: HuggingFaceDataset, next_mode
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,  # Use GA to mimic batch size!
         warmup_steps=5,
-        max_steps=60,  # Maximum number of steps to train for
-        # num_train_epochs = 1, # Set this for 1 full training run
+        max_steps=-1,  # Maximum number of steps to train for
+        num_train_epochs=3,  # Set this for 3 full training runs
         learning_rate=2e-4,  # Reduce to 2e-5 for long training runs
         logging_steps=1,
         optim="adamw_8bit",

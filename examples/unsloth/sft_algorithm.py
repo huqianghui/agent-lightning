@@ -18,6 +18,7 @@ agl store --port 4747
 """
 
 import asyncio
+import hashlib
 import json
 import multiprocessing
 import os
@@ -25,7 +26,7 @@ import random
 import subprocess
 import time
 from contextlib import contextmanager
-from typing import Any, List, Optional, Tuple, TypedDict
+from typing import Any, List, NamedTuple, Optional, Tuple, TypedDict, cast
 
 import httpx
 from datasets import Dataset as HuggingFaceDataset  # type: ignore
@@ -71,20 +72,41 @@ class SftTextDatasetRecord(TypedDict):
     response_token_count: int
 
 
+class SftIterationResult(NamedTuple):
+    """Result of one SFT iteration."""
+
+    model_path: str
+    data_fingerprint: str
+    data_changed: bool
+
+
 def _extract_text(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, str):
         return value
     if isinstance(value, list):
-        return "\n".join(text for item in value if (text := _extract_text(item)))
+        return "\n".join(text for item in cast(List[Any], value) if (text := _extract_text(item)))
     if isinstance(value, dict):
         for key in ("content", "text", "message", "delta"):
-            text = _extract_text(value.get(key))
+            text = _extract_text(cast(dict[str, Any], value).get(key))
             if text:
                 return text
-        return "\n".join(text for item in value.values() if (text := _extract_text(item)))
+        return "\n".join(text for item in cast(dict[Any, Any], value).values() if (text := _extract_text(item)))
     return str(value)
+
+
+def _fingerprint_sft_triplets(triplets: List[HuggingFaceDatasetRecord]) -> str:
+    stable_triplets = sorted(
+        triplets,
+        key=lambda triplet: (
+            triplet["reward"],
+            triplet["input_ids"],
+            triplet["labels"],
+        ),
+    )
+    payload = json.dumps(stable_triplets, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 @contextmanager
@@ -172,7 +194,8 @@ async def sft_one_iter(
     data_adapter: TraceToTripletBase,
     reward_threshold: float,
     vllm_port: int,
-) -> str:
+    previous_data_fingerprint: Optional[str] = None,
+) -> SftIterationResult:
     """One iteration of SFT.
 
     The idea is to get all trace data from the rollouts, and then use the reward to select triplets to train on.
@@ -188,9 +211,11 @@ async def sft_one_iter(
         data_adapter: The data adapter instance. This is used to convert the trace data recorded by LLM proxy.
         reward_threshold: Only triplets with rewards greater than this threshold are used for SFT.
         vllm_port: The port to serve vLLM chat completion endpoint.
+        previous_data_fingerprint: Fingerprint from the previous iteration. If the selected SFT data is unchanged,
+            training is skipped and convergence is reported.
 
     Returns:
-        The path to the saved model (next generation).
+        The iteration result, including the next model path and whether selected SFT data changed.
     """
 
     console.print(f"\n[bold red][Algo][/bold red] Starting iteration {iteration}")
@@ -349,6 +374,7 @@ async def sft_one_iter(
     random.shuffle(selected_records)
     selected_triplets = [record[0] for record in selected_records]
     selected_text_triplets = [record[1] for record in selected_records]
+    data_fingerprint = _fingerprint_sft_triplets(selected_triplets)
     sft_data_path = f"sft_data_iter{iteration}_tokens.json"
     sft_text_data_path = f"sft_data_iter{iteration}_text.json"
     with open(sft_data_path, "w") as f:
@@ -358,6 +384,14 @@ async def sft_one_iter(
     console.print(
         f"[bold red][Algo][/bold red] Saved SFT training data to {sft_data_path} and {sft_text_data_path}"
     )
+
+    if previous_data_fingerprint == data_fingerprint:
+        console.print("[bold red][Algo][/bold red] SFT data did not change. Stopping before training.")
+        return SftIterationResult(
+            model_path=model_path,
+            data_fingerprint=data_fingerprint,
+            data_changed=False,
+        )
 
     sft_dataset = HuggingFaceDataset.from_list(selected_triplets)  # type: ignore
 
@@ -385,7 +419,11 @@ async def sft_one_iter(
 
     console.print(f"[bold red][Algo][/bold red] Saved model to {next_model_path}")
 
-    return next_model_path
+    return SftIterationResult(
+        model_path=next_model_path,
+        data_fingerprint=data_fingerprint,
+        data_changed=True,
+    )
 
 
 async def sft_algorithm(*, store: LightningStore) -> None:
@@ -407,7 +445,7 @@ async def sft_algorithm(*, store: LightningStore) -> None:
     train_dataset = load_math_dataset()
 
     # Constants for the SFT algorithm
-    MAX_ITERATIONS = 2
+    MAX_ITERATIONS: Optional[int] = None
     VLLM_PORT = 12316
     LLM_PROXY_PORT = 12358
     REWARD_THRESHOLD = 0.0
@@ -423,8 +461,10 @@ async def sft_algorithm(*, store: LightningStore) -> None:
     # into a format suitable for SFT
     data_adapter = LlmProxyTraceToTriplet()
 
-    for iteration in range(MAX_ITERATIONS):
-        model_path = await sft_one_iter(
+    iteration = 0
+    previous_data_fingerprint: Optional[str] = None
+    while MAX_ITERATIONS is None or iteration < MAX_ITERATIONS:
+        result = await sft_one_iter(
             iteration=iteration,
             store=store,
             model_path=model_path,
@@ -433,7 +473,13 @@ async def sft_algorithm(*, store: LightningStore) -> None:
             data_adapter=data_adapter,
             reward_threshold=REWARD_THRESHOLD,
             vllm_port=VLLM_PORT,
+            previous_data_fingerprint=previous_data_fingerprint,
         )
+        model_path = result.model_path
+        if not result.data_changed:
+            break
+        previous_data_fingerprint = result.data_fingerprint
+        iteration += 1
 
     console.print(f"[bold red][Algo][/bold red] Final model path: {model_path}")
 
