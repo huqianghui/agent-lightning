@@ -78,6 +78,39 @@ class SftIterationResult(NamedTuple):
     model_path: str
     data_fingerprint: str
     data_changed: bool
+    reward_sample_count: int
+
+
+class SftRewardCountRecord(NamedTuple):
+    """Reward-filtered SFT sample count produced by one rollout model."""
+
+    iteration: int
+    model_path: str
+    reward_sample_count: int
+
+
+def should_stop_by_reward_count(
+    previous_records: List[SftRewardCountRecord], current_reward_sample_count: int
+) -> bool:
+    """Stop when the latest reward count is strictly below at least two previous counts."""
+
+    return sum(current_reward_sample_count < record.reward_sample_count for record in previous_records) >= 2
+
+
+def print_reward_count_recommendation(records: List[SftRewardCountRecord]) -> None:
+    """Print the best rollout model according to reward-filtered SFT sample count."""
+
+    if len(records) == 0:
+        return
+    best_record = max(records, key=lambda record: record.reward_sample_count)
+    history = ", ".join(
+        f"iter {record.iteration}: {record.reward_sample_count} ({record.model_path})" for record in records
+    )
+    console.print(f"[bold red][Algo][/bold red] Reward sample count history: {history}")
+    console.print(
+        f"[bold red][Algo][/bold red] Recommended model path: {best_record.model_path} "
+        f"from iteration {best_record.iteration} with {best_record.reward_sample_count} reward samples."
+    )
 
 
 def _extract_text(value: Any) -> str:
@@ -374,6 +407,7 @@ async def sft_one_iter(
     random.shuffle(selected_records)
     selected_triplets = [record[0] for record in selected_records]
     selected_text_triplets = [record[1] for record in selected_records]
+    reward_sample_count = len(selected_triplets)
     data_fingerprint = _fingerprint_sft_triplets(selected_triplets)
     sft_data_path = f"sft_data_iter{iteration}_tokens.json"
     sft_text_data_path = f"sft_data_iter{iteration}_text.json"
@@ -391,6 +425,7 @@ async def sft_one_iter(
             model_path=model_path,
             data_fingerprint=data_fingerprint,
             data_changed=False,
+            reward_sample_count=reward_sample_count,
         )
 
     sft_dataset = HuggingFaceDataset.from_list(selected_triplets)  # type: ignore
@@ -423,6 +458,7 @@ async def sft_one_iter(
         model_path=next_model_path,
         data_fingerprint=data_fingerprint,
         data_changed=True,
+        reward_sample_count=reward_sample_count,
     )
 
 
@@ -462,8 +498,9 @@ async def sft_algorithm(*, store: LightningStore) -> None:
     data_adapter = LlmProxyTraceToTriplet()
 
     iteration = 0
-    previous_data_fingerprint: Optional[str] = None
+    reward_count_records: List[SftRewardCountRecord] = []
     while MAX_ITERATIONS is None or iteration < MAX_ITERATIONS:
+        rollout_model_path = model_path
         result = await sft_one_iter(
             iteration=iteration,
             store=store,
@@ -473,15 +510,26 @@ async def sft_algorithm(*, store: LightningStore) -> None:
             data_adapter=data_adapter,
             reward_threshold=REWARD_THRESHOLD,
             vllm_port=VLLM_PORT,
-            previous_data_fingerprint=previous_data_fingerprint,
         )
         model_path = result.model_path
-        if not result.data_changed:
+        should_stop = should_stop_by_reward_count(reward_count_records, result.reward_sample_count)
+        reward_count_records.append(
+            SftRewardCountRecord(
+                iteration=iteration,
+                model_path=rollout_model_path,
+                reward_sample_count=result.reward_sample_count,
+            )
+        )
+        if should_stop:
+            console.print(
+                f"[bold red][Algo][/bold red] Latest reward sample count {result.reward_sample_count} is lower "
+                "than at least two previous counts. Stopping."
+            )
             break
-        previous_data_fingerprint = result.data_fingerprint
         iteration += 1
 
-    console.print(f"[bold red][Algo][/bold red] Final model path: {model_path}")
+    print_reward_count_recommendation(reward_count_records)
+    console.print(f"[bold red][Algo][/bold red] Last trained model path: {model_path}")
 
 
 if __name__ == "__main__":

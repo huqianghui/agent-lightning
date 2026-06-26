@@ -15,7 +15,12 @@ from typing import Optional
 
 from math_agent import GsmProblem, load_math_dataset, math_agent
 from rich.console import Console
-from sft_algorithm import sft_one_iter
+from sft_algorithm import (
+    SftRewardCountRecord,
+    print_reward_count_recommendation,
+    sft_one_iter,
+    should_stop_by_reward_count,
+)
 
 from agentlightning import Trainer, setup_logging
 from agentlightning.adapter import TraceToTripletBase
@@ -89,8 +94,9 @@ class UnslothSupervisedFinetuning(Algorithm):
         console.print(f"[bold red][Algo][/bold red] Initial model path: {self.initial_model_path}")
         model_path = self.initial_model_path
         iteration = 0
-        previous_data_fingerprint: Optional[str] = None
+        reward_count_records: list[SftRewardCountRecord] = []
         while self.max_iterations is None or iteration < self.max_iterations:
+            rollout_model_path = model_path
             result = await sft_one_iter(
                 iteration=iteration,
                 store=store,
@@ -100,15 +106,26 @@ class UnslothSupervisedFinetuning(Algorithm):
                 data_adapter=data_adapter,
                 reward_threshold=self.reward_threshold,
                 vllm_port=self.vllm_port,
-                previous_data_fingerprint=previous_data_fingerprint,
             )
             model_path = result.model_path
-            if not result.data_changed:
+            should_stop = should_stop_by_reward_count(reward_count_records, result.reward_sample_count)
+            reward_count_records.append(
+                SftRewardCountRecord(
+                    iteration=iteration,
+                    model_path=rollout_model_path,
+                    reward_sample_count=result.reward_sample_count,
+                )
+            )
+            if should_stop:
+                console.print(
+                    f"[bold red][Algo][/bold red] Latest reward sample count {result.reward_sample_count} is lower "
+                    "than at least two previous counts. Stopping."
+                )
                 break
-            previous_data_fingerprint = result.data_fingerprint
             iteration += 1
 
-        console.print(f"[bold red][Algo][/bold red] Final model path: {model_path}")
+        print_reward_count_recommendation(reward_count_records)
+        console.print(f"[bold red][Algo][/bold red] Last trained model path: {model_path}")
 
 
 if __name__ == "__main__":
