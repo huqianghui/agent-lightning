@@ -25,7 +25,7 @@ import numpy as np
 from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, Runner
 from agents.mcp import MCPServerStdio
 from datasets import load_dataset  # type: ignore
-from openai import AsyncOpenAI
+from openai import AsyncAzureOpenAI
 from rich.console import Console
 from trl import SFTConfig, SFTTrainer  # type: ignore
 
@@ -109,7 +109,7 @@ async def math_agent(task: GsmProblem, llm: LLM) -> float:
             mcp_servers=[server],
             model=OpenAIChatCompletionsModel(
                 model=llm.model,
-                openai_client=AsyncOpenAI(
+                openai_client=AsyncAzureOpenAI(
                     base_url=llm.endpoint,
                     api_key=llm.api_key or "dummy",
                 ),
