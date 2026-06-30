@@ -281,7 +281,7 @@ override-dependencies = [
   "mcp>=1.19.0",
   "uvicorn>=0.38.0",
   # Conflicts between packaging dependency of pyvers (dependency of tensordict) and agentops.
-  "packaging>=24.0",
+  "packaging>=24.0,<25.0",
   # Conflicts between litellm and fastmcp
   "websockets>=15.0.1",
   "rich>=13.9.4",
