@@ -65,7 +65,7 @@ To test the agent interactively without training:
 python calc_agent.py
 ```
 
-This runs the agent on sample problems to verify that the MCP calculator integration and AutoGen setup work correctly. This test relies on an OpenAI service available. Set `OPENAI_API_KEY` environment variable to the API key of the OpenAI service; and `OPENAI_API_BASE` environment variable to the base URL of the OpenAI service.
+This runs the agent on sample problems to verify that the MCP calculator integration and AutoGen setup work correctly. This test relies on an OpenAI service being available. For an OpenAI-compatible endpoint, set `OPENAI_API_KEY`, `OPENAI_API_BASE` or `OPENAI_BASE_URL`, and optionally `OPENAI_MODEL`. For Azure OpenAI, set `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_API_VERSION` or `OPENAI_API_VERSION`, and `AZURE_OPENAI_DEPLOYMENT`.
 
 A very common issue is that the agent may hang indefinitely if the environment is not properly configured. Verify that `uv` and the MCP calculator server are correctly installed by running:
 
