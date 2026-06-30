@@ -107,6 +107,10 @@ def verl_default_config() -> Dict[str, Any]:
     return config
 
 
+def _wandb_disabled() -> bool:
+    return os.getenv("WANDB_MODE", "").lower() == "disabled" or os.getenv("WANDB_DISABLED", "").lower() == "true"
+
+
 def train(
     *,
     train_file: str,
@@ -152,6 +156,12 @@ def train(
     print(val_dataset[:5])  # type: ignore
 
     config = verl_default_config()
+
+    if _wandb_disabled():
+        os.environ["WANDB_MODE"] = "disabled"
+        os.environ["WANDB_DISABLED"] = "true"
+        config["trainer"]["logger"] = ["console"]
+        print("W&B disabled; using console logger only.")
 
     if model:
         config["actor_rollout_ref"]["model"]["path"] = model
@@ -211,6 +221,9 @@ def train(
         if ci_fast:
             # Extra fast CI toggle for testing purposes.
             config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
+            config["actor_rollout_ref"]["rollout"]["max_model_len"] = 8192
+            config["actor_rollout_ref"]["rollout"]["max_num_seqs"] = 32
+            config["actor_rollout_ref"]["rollout"]["max_num_batched_tokens"] = 2048
             config["trainer"]["total_training_steps"] = 1
             config["trainer"]["test_freq"] = 1
 
