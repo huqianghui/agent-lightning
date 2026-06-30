@@ -16,13 +16,13 @@ pip install "autogen-agentchat" "autogen-ext[openai]" "mcp>=1.10.0"
 
 ## Dataset
 
-Download the Calc-X dataset in parquet format from [here](https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view?usp=sharing) and extract it to the `data` folder:
+The Calc-X dataset is included in the `data` folder as parquet files, so no separate download is required. The original archive is also included as `calc-x-data.zip`; if you need to recreate the `data` folder, extract it with:
 
 ```bash
 unzip calc-x-data.zip -d data
 ```
 
-The dataset contains mathematical problems with ground truth solutions for training and evaluation.
+The dataset contains mathematical problems with ground truth solutions for training and evaluation. The default training command uses `data/train.parquet` and `data/test.parquet`.
 
 ## Included Files
 
