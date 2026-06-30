@@ -9,8 +9,8 @@ import re
 from typing import TypedDict, cast
 
 from autogen_agentchat.agents import AssistantAgent
-from autogen_core.models import ModelFamily
-from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_core.models import ModelFamily, ModelInfo
+from autogen_ext.models.openai import AzureOpenAIChatCompletionClient, OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 from eval_utils import evaluate
 
@@ -36,22 +36,62 @@ class MathProblem(TypedDict):
     source: str
 
 
-def autogen_assistant_agent(
-    model: str, openai_base_url: str, temperature: float, workbench: McpWorkbench
-) -> AssistantAgent:
-    model_client = OpenAIChatCompletionClient(
-        model=model,
-        base_url=openai_base_url,
-        api_key=os.environ.get("OPENAI_API_KEY", "token-abc123"),
-        model_info={
-            "vision": False,
-            "function_calling": True,
-            "json_output": False,
-            "family": ModelFamily.UNKNOWN,
-            "structured_output": False,
-        },
-        temperature=temperature,
+def _get_required_env(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    raise RuntimeError(f"Set one of these environment variables: {', '.join(names)}")
+
+
+def _llm_from_env() -> agl.LLM:
+    if os.getenv("AZURE_OPENAI_ENDPOINT"):
+        return agl.LLM(
+            endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+            api_key=_get_required_env("AZURE_OPENAI_API_KEY", "OPENAI_API_KEY"),
+            model=os.getenv("AZURE_OPENAI_DEPLOYMENT", os.getenv("OPENAI_MODEL", "gpt-4.1-nano")),
+            sampling_parameters={
+                "temperature": 1.0,
+                "api_version": _get_required_env("AZURE_OPENAI_API_VERSION", "OPENAI_API_VERSION"),
+            },
+        )
+
+    return agl.LLM(
+        endpoint=_get_required_env("OPENAI_BASE_URL", "OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY", "token-abc123"),
+        model=os.getenv("OPENAI_MODEL", "gpt-4.1-nano"),
+        sampling_parameters={"temperature": 1.0},
     )
+
+
+def autogen_assistant_agent(llm: agl.LLM, workbench: McpWorkbench) -> AssistantAgent:
+    model_info: ModelInfo = {
+        "vision": False,
+        "function_calling": True,
+        "json_output": False,
+        "family": ModelFamily.UNKNOWN,
+        "structured_output": False,
+    }
+    temperature = llm.sampling_parameters.get("temperature", 0.7)
+    api_version = llm.sampling_parameters.get("api_version")
+    if api_version:
+        model_client = AzureOpenAIChatCompletionClient(
+            model=llm.model,
+            azure_deployment=llm.model,
+            azure_endpoint=llm.endpoint,
+            api_key=llm.api_key or os.environ.get("AZURE_OPENAI_API_KEY", ""),
+            api_version=str(api_version),
+            model_info=model_info,
+            temperature=temperature,
+        )
+    else:
+        model_client = OpenAIChatCompletionClient(
+            model=llm.model,
+            base_url=llm.endpoint,
+            api_key=llm.api_key or os.environ.get("OPENAI_API_KEY", "token-abc123"),
+            model_info=model_info,
+            temperature=temperature,
+        )
 
     calc_agent = AssistantAgent(
         name="calc",
@@ -75,12 +115,7 @@ async def calc_agent(task: MathProblem, llm: agl.LLM) -> None:
     calculator_mcp_server = StdioServerParams(command="uvx", args=["mcp-server-calculator"])
 
     async with McpWorkbench(calculator_mcp_server) as workbench:
-        calc_agent = autogen_assistant_agent(
-            llm.model,
-            llm.endpoint,
-            llm.sampling_parameters.get("temperature", 0.7),
-            workbench,
-        )
+        calc_agent = autogen_assistant_agent(llm, workbench)
         try:
             output_format = "Output the answer when you are ready. The answer should be surrounded by three sharps (`###`), in the form of ### ANSWER: <answer> ###."
             prompt = task["question"] + " " + output_format
@@ -109,8 +144,7 @@ async def debug():
     """Here we show a more manual way for debugging, without Trainer.
 
     We get the data samples on our own, and run the agent with LitAgentRunner.
-    You will need an `OPENAI_API_KEY` and `OPENAI_BASE_URL` environment variable set
-    to run this function.
+    You will need OpenAI-compatible or Azure OpenAI environment variables set to run this function.
     """
     # Manually create a tracer as Runner will need it.
     # Use a dummy OtelTracer if you don't need to trace anything other than reward.
@@ -122,9 +156,7 @@ async def debug():
     store = agl.InMemoryLightningStore()
 
     # This is what needs to be tuned (i.e., LLM)
-    resource = agl.LLM(
-        endpoint=os.environ["OPENAI_BASE_URL"], model="gpt-4.1-nano", sampling_parameters={"temperature": 1.0}
-    )
+    resource = _llm_from_env()
 
     made_up_task: MathProblem = {
         "id": "debug-1",
