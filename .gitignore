@@ -4,6 +4,7 @@ meta-llama/**
 **/debug/**/*.png
 **/debug/**/*.json
 requirements-freeze*.txt
+!requirements-freeze-calcx-aligned.txt
 /playground
 
 # Byte-compiled / optimized / DLL files
