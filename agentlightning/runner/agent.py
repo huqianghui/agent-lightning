@@ -311,6 +311,8 @@ class LitAgentRunner(Runner[T_task]):
                 sequence_id=sequence_id,
             )
             await store.add_span(reward_span)
+            # Include the reward span so downstream logging (span count, final reward) reflects it
+            trace_spans.append(reward_span)
             result_recognized = True
 
         # Case 2-4: result is a list
